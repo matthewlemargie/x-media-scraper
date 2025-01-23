@@ -104,11 +104,10 @@ try:
                     "--directory", 
                     accountdir + "/"
                 ])
-            time.sleep(1)
 
-        for url in urls:
-            if "video" in url:
+            elif "video" in url:
                 os.system(f"yt-dlp \"{sitebase + url}\" -o \"{accountdir.strip()}/%(title).50s_%(playlist_index)s.%(ext)s\" --cookies-from-browser firefox")
+
             time.sleep(1)
 
     driver.close()
