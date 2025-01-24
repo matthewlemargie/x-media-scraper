@@ -9,6 +9,12 @@ import subprocess
 import time
 from tqdm import tqdm
 import json
+import argparse
+
+parser = argparse.ArgumentParser(description="XMediaScraper")
+parser.add_argument("--skip-gifs", action="store_true", help="Don't download gifs from profiles'")
+
+args = parser.parse_args()
 
 video_types = set(["mp4", "m4v", "avi", "mkv"])
 
@@ -125,6 +131,8 @@ def download_media_from_urls(urls, accountdir):
     for i in tqdm(range(len(urls))):
         id = urls[i][0].split("/")[-3]
         media_type = urls[i][0].split("/")[-2]
+        if args.skip_gifs and urls[i][1]:
+            continue
         if media_type == "video" or urls[i][1]:
             isVideo = True
         else:
