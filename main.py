@@ -8,7 +8,7 @@ import requests
 import os
 import subprocess
 import time
-from yt_dlp import YoutubeDL
+from tqdm import tqdm
 import json
 
 def truncate_title(title, max_length=50):
@@ -94,21 +94,20 @@ try:
 
         accountdir = os.path.join(imgdir, account_name)
 
-        for url in urls:
-            if "photo" in url:
-                subprocess.run([
-                    "gallery-dl", 
-                    "--cookies", 
-                    "cookies.txt", 
-                    f"{sitebase + url}", 
-                    "--directory", 
-                    accountdir + "/"
-                ])
+        urls = list(urls)
 
-            elif "video" in url:
-                os.system(f"yt-dlp \"{sitebase + url}\" -o \"{accountdir.strip()}/%(title).50s_%(playlist_index)s.%(ext)s\" --cookies-from-browser firefox")
+        for i in tqdm(range(len(urls))):
+            subprocess.run([
+                "gallery-dl", 
+                "--quiet", 
+                "--cookies", 
+                "cookies.txt", 
+                f"{sitebase + urls[i]}", 
+                "--directory", 
+                accountdir + "/"
+            ])
 
-            time.sleep(1)
+            time.sleep(5)
 
     driver.close()
 except KeyboardInterrupt:
