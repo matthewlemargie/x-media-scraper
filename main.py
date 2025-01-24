@@ -4,12 +4,17 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from bs4 import BeautifulSoup
-import requests
 import os
 import subprocess
 import time
 from tqdm import tqdm
 import json
+
+def return_file_set_from_directory(directory_path):
+    if os.path.exists(directory_path):
+        return {file.split("_")[0] for file in os.listdir(directory_path) if os.path.isfile(os.path.join(directory_path, file))}
+    else:
+        return set()
 
 def truncate_title(title, max_length=50):
     return title[:max_length] if len(title) > max_length else title
@@ -17,16 +22,13 @@ def truncate_title(title, max_length=50):
 def import_cookies(driver, file_path):
     with open(file_path, 'r') as file:
         for line in file:
-            # Skip comments and blank lines
             if line.startswith("#") or not line.strip():
                 continue
             
-            # Split cookie attributes based on tab separation
             fields = line.strip().split("\t")
             if len(fields) != 7:
-                continue  # Ensure the correct format
+                continue
             
-            # Map fields to Selenium cookie structure
             cookie = {
                 "domain": fields[0],
                 "httpOnly": fields[3].lower() == "true",
@@ -55,16 +57,45 @@ accountfile.close()
 try:
     for account_url in accounts:
         account_name = account_url.split("/")[-1]
-        driver.get(account_url)
         while True:
-            elements = driver.find_elements(By.CSS_SELECTOR, "a.css-175oi2r.r-1awozwy.r-6koalj.r-eqz5dr.r-16y2uox.r-1h3ijdo.r-1777fci.r-s8bhmr.r-1c4vpko.r-1c7gwzm.r-o7ynqc.r-6416eg.r-1ny4l3l.r-1loqt21")
-            if len(elements) < 3:
-                continue
-            else:
-                break
-        elements[-1].click()
+            driver.get(account_url)
 
-        time.sleep(1)
+            while True:
+                elements = driver.find_elements(By.CSS_SELECTOR, "a.css-175oi2r.r-1awozwy.r-6koalj.r-eqz5dr.r-16y2uox.r-1h3ijdo.r-1777fci.r-s8bhmr.r-1c4vpko.r-1c7gwzm.r-o7ynqc.r-6416eg.r-1ny4l3l.r-1loqt21")
+                if len(elements) >= 3:
+                    break
+                time.sleep(1)
+            try:
+                elements[-1].click()
+            except IndexError:
+                continue
+
+            time.sleep(2)
+            images_found = False
+            max_attempts = 3
+            attempts = 0
+
+            while attempts < max_attempts:
+                soup = BeautifulSoup(driver.page_source, 'html.parser')
+                section = soup.find("section", class_="css-175oi2r")
+
+                if section:
+                    try:
+                        images = section.find_all("img")
+                        if images:
+                            images_found = True
+                            break
+                    except Exception as e:
+                        pass
+
+                attempts += 1
+                time.sleep(1)
+
+            if images_found:
+                break
+            else:
+                continue
+
         urls = set()
 
         while True:
@@ -93,21 +124,24 @@ try:
             time.sleep(1)
 
         accountdir = os.path.join(imgdir, account_name)
+        accountdir = accountdir.strip() + "/"
+        done_set = return_file_set_from_directory(accountdir)
 
         urls = list(urls)
 
         for i in tqdm(range(len(urls))):
-            subprocess.run([
-                "gallery-dl", 
-                "--quiet", 
-                "--cookies", 
-                "cookies.txt", 
-                f"{sitebase + urls[i]}", 
-                "--directory", 
-                accountdir + "/"
-            ])
-
-            time.sleep(5)
+            id = urls[i].split("/")[-3]
+            if id not in done_set:
+                subprocess.run([
+                    "gallery-dl", 
+                    "--quiet", 
+                    "--cookies", 
+                    "cookies.txt", 
+                    f"{sitebase + urls[i]}", 
+                    "--directory", 
+                    accountdir + "/"
+                ])
+                time.sleep(4)
 
     driver.close()
 except KeyboardInterrupt:
