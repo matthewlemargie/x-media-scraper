@@ -51,114 +51,129 @@ def import_cookies(driver, file_path):
             except Exception as e:
                 print(f"Failed to add cookie: {cookie}, error: {e}")
 
+def select_media_tab(webDriver):
+    # select media tab on profile
+    while True:
+        elements = webDriver.find_elements(By.CSS_SELECTOR, "a.css-175oi2r.r-1awozwy.r-6koalj.r-eqz5dr.r-16y2uox.r-1h3ijdo.r-1777fci.r-s8bhmr.r-1c4vpko.r-1c7gwzm.r-o7ynqc.r-6416eg.r-1ny4l3l.r-1loqt21")
+        if len(elements) >= 3:
+            break
+        time.sleep(1)
+    elements[-1].click()
+
+def check_content_loaded(webDriver):
+    images_found = False
+    max_attempts = 3
+    attempts = 0
+    # make sure content has loaded
+    while attempts < max_attempts:
+        soup = BeautifulSoup(webDriver.page_source, 'html.parser')
+        section = soup.find("section", class_="css-175oi2r")
+
+        if section:
+            try:
+                images = section.find_all("img")
+                if images:
+                    images_found = True
+                    break
+            except Exception as e:
+                pass
+
+        attempts += 1
+        time.sleep(1)
+    return images_found
+
+
+def get_content_urls(webDriver):
+    urls = set()
+    # get urls for every piece of content
+    while True:
+        urls_len = len(urls)
+
+        while True:
+            soup = BeautifulSoup(webDriver.page_source, 'html.parser')
+            section = soup.find("section", class_="css-175oi2r")
+            try:
+                links = section.find_all("a")
+                if links is not None:
+                    break
+            except:
+                continue
+
+        for link in links:
+            href = link.get("href")
+            if (href,) in urls:
+                continue
+            try:
+                isGif = link.find("span", class_="css-1jxf684 r-bcqeeo r-1ttztb7 r-qvutc0 r-poiln3").text == "GIF"
+            except:
+                isGif = False
+            
+            urls.update([(href, isGif)])
+
+        if len(urls) == urls_len:
+            break
+
+        # Scroll to the bottom of the page
+        webDriver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+
+        time.sleep(1)
+
+    return tuple(urls)
+
+def download_media_from_urls(urls, accountdir):
+    isVideo = False
+    for i in tqdm(range(len(urls))):
+        id = urls[i][0].split("/")[-3]
+        media_type = urls[i][0].split("/")[-2]
+        if media_type == "video" or urls[i][1]:
+            isVideo = True
+        else:
+            isVideo = False
+        if (id, isVideo) not in done_set:
+            subprocess.run([
+                "gallery-dl", 
+                "--quiet", 
+                "--cookies", 
+                "cookies.txt", 
+                f"{sitebase + urls[i][0]}", 
+                "--directory", 
+                accountdir + "/"
+            ])
+            time.sleep(2)
+
+def launch_x_webdriver():
+    driver = webdriver.Firefox()
+    driver.get("https://x.com")
+    import_cookies(driver, "cookies.txt")
+    return driver
+
+
 sitebase = "https://x.com"
 imgdir = '/home/dmac/Pictures/'
-
-driver = webdriver.Firefox()
-driver.get(sitebase)
-import_cookies(driver, "cookies.txt")
 
 accountfile = open("accounts.info", "r")
 accounts = accountfile.readlines()
 accountfile.close()
 
 try:
+    driver = launch_x_webdriver()
+
     for account_url in accounts:
         account_name = account_url.split("/")[-1]
-        while True:
-            driver.get(account_url)
-
-            # select media tab on profile
-            while True:
-                elements = driver.find_elements(By.CSS_SELECTOR, "a.css-175oi2r.r-1awozwy.r-6koalj.r-eqz5dr.r-16y2uox.r-1h3ijdo.r-1777fci.r-s8bhmr.r-1c4vpko.r-1c7gwzm.r-o7ynqc.r-6416eg.r-1ny4l3l.r-1loqt21")
-                if len(elements) >= 3:
-                    break
-                time.sleep(1)
-            try:
-                elements[-1].click()
-            except IndexError:
-                continue
-
-            time.sleep(2)
-            images_found = False
-            max_attempts = 3
-            attempts = 0
-
-            # make sure content has loaded
-            while attempts < max_attempts:
-                soup = BeautifulSoup(driver.page_source, 'html.parser')
-                section = soup.find("section", class_="css-175oi2r")
-
-                if section:
-                    try:
-                        images = section.find_all("img")
-                        if images:
-                            images_found = True
-                            break
-                    except Exception as e:
-                        pass
-
-                attempts += 1
-                time.sleep(1)
-
-            if images_found:
-                break
-            else:
-                continue
-
-        urls = set()
-
-        # get urls for every piece of content
-        while True:
-            urls_len = len(urls)
-
-            while True:
-                soup = BeautifulSoup(driver.page_source, 'html.parser')
-                section = soup.find("section", class_="css-175oi2r")
-                try:
-                    links = section.find_all("a")
-                    if links is not None:
-                        break
-                except:
-                    continue
-
-            links = {link.get("href") for link in links if link.get("href")}
-
-            urls.update(links)
-
-            if len(urls) == urls_len:
-                break
-
-            # Scroll to the bottom of the page
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-
-            time.sleep(1)
-
-        accountdir = os.path.join(imgdir, account_name)
-        accountdir = accountdir.strip() + "/"
+        accountdir = os.path.join(imgdir, account_name).strip() + "/"
         done_set = return_file_set_from_directory(accountdir)
 
-        urls = list(urls)
-
-        isVideo = False
-        for i in tqdm(range(len(urls))):
-            id = urls[i].split("/")[-3]
-            media_type = urls[i].split("/")[-2]
-            if media_type == "video":
-                isVideo = True
+        while True:
+            driver.get(account_url)
+            select_media_tab(driver)
+            time.sleep(2)
+            if check_content_loaded(driver):
+                break
             else:
-                isVideo = False
-            if (id, isVideo) not in done_set:
-                subprocess.run([
-                    "gallery-dl", 
-                    "--quiet", 
-                    "--cookies", 
-                    "cookies.txt", 
-                    f"{sitebase + urls[i]}", 
-                    "--directory", 
-                    accountdir + "/"
-                ])
-                time.sleep(4)
+                continue
+
+        urls = get_content_urls(driver)
+        download_media_from_urls(urls, accountdir)
 
     driver.close()
 except KeyboardInterrupt:
