@@ -10,11 +10,19 @@ import time
 from tqdm import tqdm
 import json
 
+video_types = set(["mp4", "m4v", "avi", "mkv"])
+
 def return_file_set_from_directory(directory_path):
+    res = set()
     if os.path.exists(directory_path):
-        return {file.split("_")[0] for file in os.listdir(directory_path) if os.path.isfile(os.path.join(directory_path, file))}
-    else:
-        return set()
+        for file in os.listdir(directory_path):
+            if os.path.isfile(os.path.join(directory_path, file)):
+                if file.split(".")[-1] in video_types:
+                    isVideo = True
+                else:
+                    isVideo = False
+                res.add((file.split("_")[0], isVideo))
+    return res
 
 def truncate_title(title, max_length=50):
     return title[:max_length] if len(title) > max_length else title
@@ -60,6 +68,7 @@ try:
         while True:
             driver.get(account_url)
 
+            # select media tab on profile
             while True:
                 elements = driver.find_elements(By.CSS_SELECTOR, "a.css-175oi2r.r-1awozwy.r-6koalj.r-eqz5dr.r-16y2uox.r-1h3ijdo.r-1777fci.r-s8bhmr.r-1c4vpko.r-1c7gwzm.r-o7ynqc.r-6416eg.r-1ny4l3l.r-1loqt21")
                 if len(elements) >= 3:
@@ -75,6 +84,7 @@ try:
             max_attempts = 3
             attempts = 0
 
+            # make sure content has loaded
             while attempts < max_attempts:
                 soup = BeautifulSoup(driver.page_source, 'html.parser')
                 section = soup.find("section", class_="css-175oi2r")
@@ -98,6 +108,7 @@ try:
 
         urls = set()
 
+        # get urls for every piece of content
         while True:
             urls_len = len(urls)
 
@@ -129,9 +140,15 @@ try:
 
         urls = list(urls)
 
+        isVideo = False
         for i in tqdm(range(len(urls))):
             id = urls[i].split("/")[-3]
-            if id not in done_set:
+            media_type = urls[i].split("/")[-2]
+            if media_type == "video":
+                isVideo = True
+            else:
+                isVideo = False
+            if (id, isVideo) not in done_set:
                 subprocess.run([
                     "gallery-dl", 
                     "--quiet", 
