@@ -4,6 +4,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from bs4 import BeautifulSoup
+import sys
 import os
 import subprocess
 import time
@@ -13,6 +14,7 @@ import argparse
 
 parser = argparse.ArgumentParser(description="XMediaScraper")
 parser.add_argument("--skip-gifs", action="store_true", help="Don't download gifs from profiles'")
+parser.add_argument("--multiple-accounts", action="store_true", help="Don't download gifs from profiles'")
 
 args = parser.parse_args()
 
@@ -155,6 +157,26 @@ def launch_x_webdriver():
     import_cookies(driver, "cookies.txt")
     return driver
 
+def switch_account(webDriver, accounts_visited):
+    while True:
+        button = driver.find_element(By.CSS_SELECTOR, "button.css-175oi2r.r-1awozwy.r-sdzlij.r-6koalj.r-18u37iz.r-xyw6el.r-1loqt21.r-o7ynqc.r-6416eg.r-1ny4l3l")
+        button.click()
+        time.sleep(2)
+        try:
+            div = driver.find_element(By.CSS_SELECTOR, "div.css-175oi2r.r-1azx6h.r-7mdpej.r-1vsu8ta.r-ek4qxl.r-1dqxon3.r-1ipicw7")
+            accounts = div.find_elements(By.CSS_SELECTOR, "button.css-175oi2r.r-1mmae3n.r-3pj75a.r-1loqt21.r-o7ynqc.r-6416eg.r-1ny4l3l")
+            for acc in accounts:
+                account = acc.find_element(By.CSS_SELECTOR, "span.css-1jxf684.r-bcqeeo.r-1ttztb7.r-qvutc0.r-poiln3").text
+                if account not in accounts_visited:
+                    acc.click()
+                    accounts_visited.add(acc)
+                    break
+            accounts_visited = set()
+            accounts[0].click()
+            break
+        except:
+            webDriver.refresh()
+            continue
 
 sitebase = "https://x.com"
 imgdir = '/home/dmac/Pictures/'
@@ -171,14 +193,22 @@ try:
         accountdir = os.path.join(imgdir, account_name).strip() + "/"
         done_set = return_file_set_from_directory(accountdir)
 
+        accounts_visited = set()
+        i = 0
+        limit = 3
         while True:
+            if i % limit == 0 and i > 0:
+                switch_account(driver, accounts_visited) if args.multiple_accounts else (driver.close(), sys.exit(0))
+            
             driver.get(account_url)
             select_media_tab(driver)
             time.sleep(2)
-            if check_content_loaded(driver):
+            
+            content_loaded = check_content_loaded(driver)
+            if content_loaded:
                 break
-            else:
-                continue
+            
+            i += 1
 
         urls = get_content_urls(driver)
         download_media_from_urls(urls, accountdir)
