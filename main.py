@@ -22,8 +22,8 @@ video_types = set(["mp4", "m4v", "avi", "mkv"])
 
 site = "https://x.com"
 
-def _import_cookies(driver, file_path):
-    with open(file_path, 'r') as file:
+def _import_cookies(driver, filePath):
+    with open(filePath, 'r') as file:
         for line in file:
             if line.startswith("#") or not line.strip():
                 continue
@@ -66,24 +66,24 @@ def return_file_set_from_directory(path):
 
 def switch_account(webDriver, accountsVisited):
     while True:
-        button = driver.find_element(By.CSS_SELECTOR, "button.css-175oi2r.r-1awozwy.r-sdzlij.r-6koalj.r-18u37iz.r-xyw6el.r-1loqt21.r-o7ynqc.r-6416eg.r-1ny4l3l")
+        button = webDriver.find_element(By.CSS_SELECTOR, "button.css-175oi2r.r-1awozwy.r-sdzlij.r-6koalj.r-18u37iz.r-xyw6el.r-1loqt21.r-o7ynqc.r-6416eg.r-1ny4l3l")
         button.click()
-        time.sleep(2)
         try:
-            div = driver.find_element(By.CSS_SELECTOR, "div.css-175oi2r.r-1azx6h.r-7mdpej.r-1vsu8ta.r-ek4qxl.r-1dqxon3.r-1ipicw7")
+            div = webDriver.find_element(By.CSS_SELECTOR, "div.css-175oi2r.r-1azx6h.r-7mdpej.r-1vsu8ta.r-ek4qxl.r-1dqxon3.r-1ipicw7")
             accounts = div.find_elements(By.CSS_SELECTOR, "button.css-175oi2r.r-1mmae3n.r-3pj75a.r-1loqt21.r-o7ynqc.r-6416eg.r-1ny4l3l")
             for acc in accounts:
                 account = acc.find_element(By.CSS_SELECTOR, "span.css-1jxf684.r-bcqeeo.r-1ttztb7.r-qvutc0.r-poiln3").text
                 if account not in accountsVisited:
+                    print(1)
                     acc.click()
                     accountsVisited.add(acc)
                     time.sleep(2)
-                    break
+                    return
             accountsVisited = set()
             accounts[0].click()
-            break
+            return
         except:
-            continue
+            pass
 
 def select_media_tab(webDriver):
     # select media tab on profile
@@ -95,14 +95,13 @@ def select_media_tab(webDriver):
     elements[-1].click()
 
 def check_content_loaded(webDriver):
+    # make sure content has loaded
     images_found = False
     max_attempts = 3
     attempts = 0
-    # make sure content has loaded
     while attempts < max_attempts:
         soup = BeautifulSoup(webDriver.page_source, 'html.parser')
         section = soup.find("section", class_="css-175oi2r")
-
         if section:
             try:
                 images = section.find_all("img")
@@ -111,11 +110,9 @@ def check_content_loaded(webDriver):
                     break
             except Exception as e:
                 pass
-
         attempts += 1
         time.sleep(1)
     return images_found
-
 
 def get_content_urls(webDriver):
     urls = set()
@@ -198,18 +195,14 @@ def main():
 
             accounts_visited = set()
             i = 0
+
             while True:
                 if i % args.limit == 0 and i > 0:
                     switch_account(driver, accounts_visited) if args.multiple_accounts else (driver.close(), sys.exit(0))
-
                 driver.get(account_url)
-                time.sleep(2)
                 select_media_tab(driver)
-                time.sleep(2)
-                
                 if check_content_loaded(driver):
                     break
-                
                 i += 1
 
             urls = get_content_urls(driver)
