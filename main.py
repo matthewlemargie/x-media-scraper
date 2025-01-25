@@ -165,7 +165,7 @@ def download_media_from_urls(urls, accountDir, doneSet):
             try:
                 subprocess.run([
                     "gallery-dl",
-                    # "--quiet",
+                    "--quiet",
                     "--cookies",
                     "cookies.txt",
                     f"{site + urls[i][0]}",
@@ -174,7 +174,6 @@ def download_media_from_urls(urls, accountDir, doneSet):
                 ], timeout=args.time_limit)
             except:
                 return True
-
             time.sleep(2)
     return rate_limited
 
@@ -197,7 +196,6 @@ def main():
             accountdir = os.path.join(accountdir ,account_name).strip()
 
             accounts_visited = set()
-
             while True:
                 done_set = return_file_set_from_directory(accountdir)
                 i = 0
@@ -208,23 +206,18 @@ def main():
                         else:
                             driver.close()
                             sys.exit(0)
-
                     driver.get(account_url)
                     select_media_tab(driver)
-
                     if check_content_loaded(driver):
                         break
                     i += 1
-
                 urls = get_content_urls(driver)
                 rate_limited = download_media_from_urls(urls, accountdir, done_set)
-
                 if not rate_limited:
                     break
                 else:
                     if args.multiple_accounts:
                         switch_account(driver, accounts_visited)
-
         driver.close()
     except KeyboardInterrupt:
         pass
