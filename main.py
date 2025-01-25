@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 import sys
 import os
 import subprocess
+import multiprocessing
 import time
 from tqdm import tqdm
 import json
@@ -13,8 +14,9 @@ import argparse
 parser = argparse.ArgumentParser(description="XMediaScraper")
 parser.add_argument("--skip-gifs", action="store_true", help="Don't download gifs from profiles")
 parser.add_argument("--multiple-accounts", action="store_true", help="Cycle through x accounts when rate limit hits")
-parser.add_argument("--limit", type=int, default=3, help="Number of times to check for media before switching accounts")
+parser.add_argument("--limit", type=int, default=2, help="Number of times to check for media before switching accounts")
 parser.add_argument("--out-dir", type=str, default="/home/dmac/Pictures/", help="Directory where media will be saved")
+parser.add_argument("--time-limit", type=int, default=120, help="How long to wait before switching accounts due to rate limit")
 
 args = parser.parse_args()
 
@@ -74,7 +76,6 @@ def switch_account(webDriver, accountsVisited):
             for acc in accounts:
                 account = acc.find_element(By.CSS_SELECTOR, "span.css-1jxf684.r-bcqeeo.r-1ttztb7.r-qvutc0.r-poiln3").text
                 if account not in accountsVisited:
-                    print(1)
                     acc.click()
                     accountsVisited.add(acc)
                     time.sleep(2)
@@ -153,26 +154,29 @@ def get_content_urls(webDriver):
 
 def download_media_from_urls(urls, accountDir, doneSet):
     isVideo = False
+    rate_limited = False
     for i in tqdm(range(len(urls))):
         id = urls[i][0].split("/")[-3]
         media_type = urls[i][0].split("/")[-2]
         if args.skip_gifs and urls[i][1]:
             continue
-        if media_type == "video" or urls[i][1]:
-            isVideo = True
-        else:
-            isVideo = False
+        isVideo = media_type == "video" or urls[i][1]
         if (id, isVideo) not in doneSet:
-            subprocess.run([
-                "gallery-dl", 
-                "--quiet", 
-                "--cookies", 
-                "cookies.txt", 
-                f"{site + urls[i][0]}", 
-                "--directory", 
-                accountDir + "/"
-            ])
+            try:
+                subprocess.run([
+                    "gallery-dl",
+                    # "--quiet",
+                    "--cookies",
+                    "cookies.txt",
+                    f"{site + urls[i][0]}",
+                    "--directory",
+                    accountDir + "/"
+                ], timeout=args.time_limit)
+            except:
+                return True
+
             time.sleep(2)
+    return rate_limited
 
 def main():
     imgdir = args.out_dir
@@ -191,22 +195,35 @@ def main():
             for d in dirs:
                 accountdir = os.path.join(accountdir, d)
             accountdir = os.path.join(accountdir ,account_name).strip()
-            done_set = return_file_set_from_directory(accountdir)
 
             accounts_visited = set()
-            i = 0
 
             while True:
-                if i % args.limit == 0 and i > 0:
-                    switch_account(driver, accounts_visited) if args.multiple_accounts else (driver.close(), sys.exit(0))
-                driver.get(account_url)
-                select_media_tab(driver)
-                if check_content_loaded(driver):
-                    break
-                i += 1
+                done_set = return_file_set_from_directory(accountdir)
+                i = 0
+                while True:
+                    if i % args.limit == 0 and i > 0:
+                        if args.multiple_accounts:
+                            switch_account(driver, accounts_visited)
+                        else:
+                            driver.close()
+                            sys.exit(0)
 
-            urls = get_content_urls(driver)
-            download_media_from_urls(urls, accountdir, done_set)
+                    driver.get(account_url)
+                    select_media_tab(driver)
+
+                    if check_content_loaded(driver):
+                        break
+                    i += 1
+
+                urls = get_content_urls(driver)
+                rate_limited = download_media_from_urls(urls, accountdir, done_set)
+
+                if not rate_limited:
+                    break
+                else:
+                    if args.multiple_accounts:
+                        switch_account(driver, accounts_visited)
 
         driver.close()
     except KeyboardInterrupt:
