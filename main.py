@@ -1,7 +1,5 @@
 from selenium.webdriver.common.by import By
 from selenium import webdriver
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from bs4 import BeautifulSoup
 import sys
@@ -13,29 +11,18 @@ import json
 import argparse
 
 parser = argparse.ArgumentParser(description="XMediaScraper")
-parser.add_argument("--skip-gifs", action="store_true", help="Don't download gifs from profiles'")
-parser.add_argument("--multiple-accounts", action="store_true", help="Don't download gifs from profiles'")
+parser.add_argument("--skip-gifs", action="store_true", help="Don't download gifs from profiles")
+parser.add_argument("--multiple-accounts", action="store_true", help="Cycle through x accounts when rate limit hits")
+parser.add_argument("--limit", type=int, default=3, help="Number of times to check for media before switching accounts")
+parser.add_argument("--out-dir", type=str, default="/home/dmac/Pictures/", help="Directory where media will be saved")
 
 args = parser.parse_args()
 
 video_types = set(["mp4", "m4v", "avi", "mkv"])
 
-def return_file_set_from_directory(directory_path):
-    res = set()
-    if os.path.exists(directory_path):
-        for file in os.listdir(directory_path):
-            if os.path.isfile(os.path.join(directory_path, file)):
-                if file.split(".")[-1] in video_types:
-                    isVideo = True
-                else:
-                    isVideo = False
-                res.add((file.split("_")[0], isVideo))
-    return res
+site = "https://x.com"
 
-def truncate_title(title, max_length=50):
-    return title[:max_length] if len(title) > max_length else title
-
-def import_cookies(driver, file_path):
+def _import_cookies(driver, file_path):
     with open(file_path, 'r') as file:
         for line in file:
             if line.startswith("#") or not line.strip():
@@ -58,6 +45,45 @@ def import_cookies(driver, file_path):
                 driver.add_cookie(cookie)
             except Exception as e:
                 print(f"Failed to add cookie: {cookie}, error: {e}")
+
+def launch_webdriver(website):
+    driver = webdriver.Firefox()
+    driver.get(website)
+    _import_cookies(driver, "cookies.txt")
+    return driver
+
+def return_file_set_from_directory(path):
+    res = set()
+    if os.path.exists(path):
+        for file in os.listdir(path):
+            if os.path.isfile(os.path.join(path, file)):
+                if file.split(".")[-1] in video_types:
+                    isVideo = True
+                else:
+                    isVideo = False
+                res.add((file.split("_")[0], isVideo))
+    return res
+
+def switch_account(webDriver, accountsVisited):
+    while True:
+        button = driver.find_element(By.CSS_SELECTOR, "button.css-175oi2r.r-1awozwy.r-sdzlij.r-6koalj.r-18u37iz.r-xyw6el.r-1loqt21.r-o7ynqc.r-6416eg.r-1ny4l3l")
+        button.click()
+        time.sleep(2)
+        try:
+            div = driver.find_element(By.CSS_SELECTOR, "div.css-175oi2r.r-1azx6h.r-7mdpej.r-1vsu8ta.r-ek4qxl.r-1dqxon3.r-1ipicw7")
+            accounts = div.find_elements(By.CSS_SELECTOR, "button.css-175oi2r.r-1mmae3n.r-3pj75a.r-1loqt21.r-o7ynqc.r-6416eg.r-1ny4l3l")
+            for acc in accounts:
+                account = acc.find_element(By.CSS_SELECTOR, "span.css-1jxf684.r-bcqeeo.r-1ttztb7.r-qvutc0.r-poiln3").text
+                if account not in accountsVisited:
+                    acc.click()
+                    accountsVisited.add(acc)
+                    time.sleep(2)
+                    break
+            accountsVisited = set()
+            accounts[0].click()
+            break
+        except:
+            continue
 
 def select_media_tab(webDriver):
     # select media tab on profile
@@ -128,7 +154,7 @@ def get_content_urls(webDriver):
 
     return tuple(urls)
 
-def download_media_from_urls(urls, accountdir):
+def download_media_from_urls(urls, accountDir, doneSet):
     isVideo = False
     for i in tqdm(range(len(urls))):
         id = urls[i][0].split("/")[-3]
@@ -139,80 +165,58 @@ def download_media_from_urls(urls, accountdir):
             isVideo = True
         else:
             isVideo = False
-        if (id, isVideo) not in done_set:
+        if (id, isVideo) not in doneSet:
             subprocess.run([
                 "gallery-dl", 
                 "--quiet", 
                 "--cookies", 
                 "cookies.txt", 
-                f"{sitebase + urls[i][0]}", 
+                f"{site + urls[i][0]}", 
                 "--directory", 
-                accountdir + "/"
+                accountDir + "/"
             ])
             time.sleep(2)
 
-def launch_x_webdriver():
-    driver = webdriver.Firefox()
-    driver.get("https://x.com")
-    import_cookies(driver, "cookies.txt")
-    return driver
+def main():
+    imgdir = args.out_dir
 
-def switch_account(webDriver, accounts_visited):
-    while True:
-        button = driver.find_element(By.CSS_SELECTOR, "button.css-175oi2r.r-1awozwy.r-sdzlij.r-6koalj.r-18u37iz.r-xyw6el.r-1loqt21.r-o7ynqc.r-6416eg.r-1ny4l3l")
-        button.click()
-        time.sleep(2)
-        try:
-            div = driver.find_element(By.CSS_SELECTOR, "div.css-175oi2r.r-1azx6h.r-7mdpej.r-1vsu8ta.r-ek4qxl.r-1dqxon3.r-1ipicw7")
-            accounts = div.find_elements(By.CSS_SELECTOR, "button.css-175oi2r.r-1mmae3n.r-3pj75a.r-1loqt21.r-o7ynqc.r-6416eg.r-1ny4l3l")
-            for acc in accounts:
-                account = acc.find_element(By.CSS_SELECTOR, "span.css-1jxf684.r-bcqeeo.r-1ttztb7.r-qvutc0.r-poiln3").text
-                if account not in accounts_visited:
-                    acc.click()
-                    accounts_visited.add(acc)
-                    break
+    accountfile = open("accounts.info", "r")
+    accounts = accountfile.readlines()
+    accountfile.close()
+
+    try:
+        driver = launch_webdriver(site)
+
+        for account_url in accounts:
+            account_name = account_url.split("/")[-1]
+            accountdir = "/"
+            dirs = imgdir.split("/")
+            for d in dirs:
+                accountdir = os.path.join(accountdir, d)
+            accountdir = os.path.join(accountdir ,account_name).strip()
+            done_set = return_file_set_from_directory(accountdir)
+
             accounts_visited = set()
-            accounts[0].click()
-            break
-        except:
-            webDriver.refresh()
-            continue
+            i = 0
+            while True:
+                if i % args.limit == 0 and i > 0:
+                    switch_account(driver, accounts_visited) if args.multiple_accounts else (driver.close(), sys.exit(0))
 
-sitebase = "https://x.com"
-imgdir = '/home/dmac/Pictures/'
+                driver.get(account_url)
+                time.sleep(2)
+                select_media_tab(driver)
+                time.sleep(2)
+                
+                if check_content_loaded(driver):
+                    break
+                
+                i += 1
 
-accountfile = open("accounts.info", "r")
-accounts = accountfile.readlines()
-accountfile.close()
+            urls = get_content_urls(driver)
+            download_media_from_urls(urls, accountdir, done_set)
 
-try:
-    driver = launch_x_webdriver()
+        driver.close()
+    except KeyboardInterrupt:
+        pass
 
-    for account_url in accounts:
-        account_name = account_url.split("/")[-1]
-        accountdir = os.path.join(imgdir, account_name).strip() + "/"
-        done_set = return_file_set_from_directory(accountdir)
-
-        accounts_visited = set()
-        i = 0
-        limit = 3
-        while True:
-            if i % limit == 0 and i > 0:
-                switch_account(driver, accounts_visited) if args.multiple_accounts else (driver.close(), sys.exit(0))
-            
-            driver.get(account_url)
-            select_media_tab(driver)
-            time.sleep(2)
-            
-            content_loaded = check_content_loaded(driver)
-            if content_loaded:
-                break
-            
-            i += 1
-
-        urls = get_content_urls(driver)
-        download_media_from_urls(urls, accountdir)
-
-    driver.close()
-except KeyboardInterrupt:
-    pass
+main()
