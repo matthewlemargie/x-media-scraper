@@ -8,7 +8,9 @@ import subprocess
 import multiprocessing
 import time
 from tqdm import tqdm
+from datetime import datetime
 import json
+from glob import glob
 import argparse
 
 parser = argparse.ArgumentParser(description="XMediaScraper")
@@ -23,6 +25,8 @@ args = parser.parse_args()
 video_types = set(["mp4", "m4v", "avi", "mkv"])
 
 site = "https://x.com"
+
+cookie_files = glob(f"{os.getcwd()}/*cookies*.txt")
 
 def _import_cookies(driver, filePath):
     with open(filePath, 'r') as file:
@@ -74,10 +78,10 @@ def switch_account(webDriver, accountsVisited):
             div = webDriver.find_element(By.CSS_SELECTOR, "div.css-175oi2r.r-1azx6h.r-7mdpej.r-1vsu8ta.r-ek4qxl.r-1dqxon3.r-1ipicw7")
             accounts = div.find_elements(By.CSS_SELECTOR, "button.css-175oi2r.r-1mmae3n.r-3pj75a.r-1loqt21.r-o7ynqc.r-6416eg.r-1ny4l3l")
             for acc in accounts:
-                account = acc.find_element(By.CSS_SELECTOR, "span.css-1jxf684.r-bcqeeo.r-1ttztb7.r-qvutc0.r-poiln3").text
+                account = acc.find_elements(By.CSS_SELECTOR, "span.css-1jxf684.r-bcqeeo.r-1ttztb7.r-qvutc0.r-poiln3")[0].text
                 if account not in accountsVisited:
                     acc.click()
-                    accountsVisited.add(acc)
+                    accountsVisited.add(account)
                     time.sleep(2)
                     return
             accountsVisited = set()
@@ -152,9 +156,11 @@ def get_content_urls(webDriver):
 
     return tuple(urls)
 
-def download_media_from_urls(urls, accountDir, doneSet):
+def download_media_from_urls(urls, accountName, accountDir, doneSet, cache, cookieNum):
     isVideo = False
     rate_limited = False
+    old_post = False
+    first_date = None
     for i in tqdm(range(len(urls))):
         id = urls[i][0].split("/")[-3]
         media_type = urls[i][0].split("/")[-2]
@@ -162,62 +168,105 @@ def download_media_from_urls(urls, accountDir, doneSet):
             continue
         isVideo = media_type == "video" or urls[i][1]
         if (id, isVideo) not in doneSet:
-            try:
-                subprocess.run([
-                    "gallery-dl",
-                    "--quiet",
-                    "--cookies",
-                    "cookies.txt",
-                    f"{site + urls[i][0]}",
-                    "--directory",
-                    accountDir + "/"
-                ], timeout=args.time_limit)
-            except:
-                return True
+            while True:
+                try:
+                    subprocess.run([
+                        "gallery-dl",
+                        "--quiet",
+                        "--write-metadata",
+                        "--cookies", cookie_files[cookieNum],
+                        f"{site}{urls[i][0]}",
+                        "--directory", f"{accountDir}{os.sep}"
+                    ], timeout=args.time_limit)
+                    break
+                except:
+                    cookieNum = (cookieNum + 1) % len(cookie_files)
+                    cookies = cookie_files[cookieNum]
+            old_post, date = _is_in_download_cache(cache, accountName, accountDir)
+            if old_post:
+                break
+            if first_date is None:
+                first_date = date
             time.sleep(2)
-    return rate_limited
+    if first_date != None:
+        cache[accountName] = first_date
+
+home_directory = os.path.expanduser("~")
+cache_file = os.path.join(home_directory, ".x_media_downloader_cache")
+
+def load_download_cache():
+    cache = dict()
+    if os.path.exists(cache_file):
+        with open(cache_file, "r") as f:
+            for line in f:
+                account, date = line.split(" ", 1)
+                account = account + "\n"
+                cache[account] = datetime.fromisoformat(date.strip())
+    return cache
+
+def _is_in_download_cache(cache, accountName, accountDir):
+    jsonfiles = glob(f"{accountDir}{os.sep}{"*.json"}")
+    with open(jsonfiles[0], "r") as file:
+        metadata = json.load(file)
+    post_date = metadata.get("date")
+    post_date = datetime.fromisoformat(post_date)
+    os.remove(jsonfiles[0])
+    if cache[accountName] >= post_date:
+        return True, post_date
+    else:
+        return False, post_date
+
+def write_download_cache(cache):
+    with open(cache_file, "w") as f:
+        for k, v in cache.items():
+            f.write(f"{k.strip()} {v}\n")
 
 def main():
+    cookie_num = 0
     imgdir = args.out_dir
 
     accountfile = open("accounts.info", "r")
     accounts = accountfile.readlines()
     accountfile.close()
 
+    cache = load_download_cache()
+    for account_url in accounts:
+        account_name = account_url.split("/")[-1]
+        if account_name not in cache:
+            cache[account_name] = datetime(2000, 1, 1, 0, 0, 0)
+
     try:
         driver = launch_webdriver(site)
 
         for account_url in accounts:
             account_name = account_url.split("/")[-1]
-            accountdir = "/"
-            dirs = imgdir.split("/")
+            account_dir = os.sep
+            dirs = imgdir.split(os.sep)
             for d in dirs:
-                accountdir = os.path.join(accountdir, d)
-            accountdir = os.path.join(accountdir ,account_name).strip()
+                account_dir = os.path.join(account_dir, d)
+            account_dir = os.path.join(account_dir ,account_name).strip()
 
             accounts_visited = set()
+            done_set = return_file_set_from_directory(account_dir)
+            i = 0
             while True:
-                done_set = return_file_set_from_directory(accountdir)
-                i = 0
-                while True:
-                    if i % args.limit == 0 and i > 0:
-                        if args.multiple_accounts:
-                            switch_account(driver, accounts_visited)
-                        else:
-                            driver.close()
-                            sys.exit(0)
-                    driver.get(account_url)
-                    select_media_tab(driver)
-                    if check_content_loaded(driver):
-                        break
-                    i += 1
-                urls = get_content_urls(driver)
-                rate_limited = download_media_from_urls(urls, accountdir, done_set)
-                if not rate_limited:
-                    break
-                else:
+                if i % args.limit == 0 and i > 0:
                     if args.multiple_accounts:
                         switch_account(driver, accounts_visited)
+                        cookie_num += 1
+                    else:
+                        driver.close()
+                        sys.exit(0)
+                driver.get(account_url)
+                select_media_tab(driver)
+                if check_content_loaded(driver):
+                    break
+                i += 1
+            urls = get_content_urls(driver)
+            download_media_from_urls(urls, account_name, account_dir, done_set, cache, cookie_num)
+
+            write_download_cache(cache)
+
         driver.close()
     except KeyboardInterrupt:
         pass
