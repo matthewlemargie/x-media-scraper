@@ -55,7 +55,7 @@ def _import_cookies(driver, filePath):
 def launch_webdriver(website):
     driver = webdriver.Firefox()
     driver.get(website)
-    _import_cookies(driver, "cookies.txt")
+    _import_cookies(driver, "cookies1.txt")
     return driver
 
 def return_file_set_from_directory(path):
@@ -93,7 +93,7 @@ def switch_account(webDriver, accountsVisited):
 def select_media_tab(webDriver):
     # select media tab on profile
     while True:
-        elements = webDriver.find_elements(By.CSS_SELECTOR, "a.css-175oi2r.r-1awozwy.r-6koalj.r-eqz5dr.r-16y2uox.r-1h3ijdo.r-1777fci.r-s8bhmr.r-1c4vpko.r-1c7gwzm.r-o7ynqc.r-6416eg.r-1ny4l3l.r-1loqt21")
+        elements = webDriver.find_elements(By.CSS_SELECTOR, "a.css-175oi2r.r-1awozwy.r-6koalj.r-eqz5dr.r-16y2uox.r-1h3ijdo.r-1777fci.r-s8bhmr.r-3pj75a.r-o7ynqc.r-6416eg.r-1ny4l3l.r-1loqt21")
         if len(elements) >= 3:
             break
         time.sleep(1)
@@ -264,6 +264,7 @@ def main():
                 i += 1
             urls = get_content_urls(driver)
             download_media_from_urls(urls, account_name, account_dir, done_set, cache, cookie_num)
+            os.system(f"rm {account_dir}{os.sep}*.json")
 
             write_download_cache(cache)
 
